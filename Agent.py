@@ -1,7 +1,40 @@
 import streamlit as st
 import random
 import time
+import uuid
+import math
 from datetime import datetime
+
+# -------------------
+# Presentation helpers (UI only)
+# -------------------
+
+def human_bytes(n: int) -> str:
+    """Convert bytes to human readable string."""
+    step_unit = 1024.0
+    if n < step_unit:
+        return f"{n} B"
+    for unit in ["KB", "MB", "GB", "TB"]:
+        n /= step_unit
+        if n < step_unit:
+            return f"{n:,.2f} {unit}"
+    return f"{n:,.2f} PB"
+
+
+def human_seconds(s: int) -> str:
+    """Convert seconds to human readable duration."""
+    if s < 60:
+        return f"{s} s"
+    m, s = divmod(s, 60)
+    if m < 60:
+        return f"{m}m {s}s"
+    h, m = divmod(m, 60)
+    return f"{h}h {m}m"
+
+
+# -------------------
+# Metric generators (unchanged)
+# -------------------
 
 def generate_container_metrics():
     return {
@@ -25,6 +58,7 @@ def generate_container_metrics():
         "sensor_humidity_pct": round(random.uniform(0.0, 100.0), 2)
     }
 
+
 def generate_vm_metrics():
     return {
         "timestamp": datetime.now().isoformat(),
@@ -43,6 +77,7 @@ def generate_vm_metrics():
         "hypervisor_overhead_pct": round(random.uniform(0.0, 100.0), 2),
         "uptime_seconds": random.randint(0, 86400)
     }
+
 
 def generate_app_metrics():
     return {
@@ -70,6 +105,7 @@ def generate_app_metrics():
         "sensor_humidity_pct": round(random.uniform(0.0, 100.0), 2)
     }
 
+
 def generate_orchestrator_metrics():
     return {
         "timestamp": datetime.now().isoformat(),
@@ -88,6 +124,7 @@ def generate_orchestrator_metrics():
         "uptime_seconds": random.randint(0, 86400)
     }
 
+
 def generate_network_metrics():
     return {
         "timestamp": datetime.now().isoformat(),
@@ -104,118 +141,263 @@ def generate_network_metrics():
         "sensor_temp_c": round(random.uniform(0.0, 100.0), 2),
         "sensor_humidity_pct": round(random.uniform(0.0, 100.0), 2)
     }
-#api naa
 
-#app
+
+# -------------------
+# Argus Agent UI (in-place updates)
+# -------------------
+
+INTERVAL = 15  # seconds
+SLEEP_STEP = 1  # update countdown once per second
+MAX_FEED = 10   # keep only 10 recent feed entries
+
+
 def main():
-    st.title("Telemetry Data Simulation")
+    st.set_page_config(page_title="Argus Agent", layout="wide", initial_sidebar_state="expanded")
 
-    container_placeholder = st.empty()
-    vm_placeholder = st.empty()
-    app_placeholder = st.empty()
-    orchestrator_placeholder = st.empty()
-    network_placeholder = st.empty()
+    # initialize persistent session state
+    if "agent_log" not in st.session_state:
+        st.session_state.agent_log = []
+    if "instance_id" not in st.session_state:
+        st.session_state.instance_id = str(uuid.uuid4())[:8]
+    if "emit_seq" not in st.session_state:
+        st.session_state.emit_seq = 0
+    if "last_emit" not in st.session_state:
+        st.session_state.last_emit = time.monotonic() - INTERVAL  # force immediate first emit
+    if "last_metrics" not in st.session_state:
+        # start with a seeded batch so UI isn't empty
+        st.session_state.last_metrics = {
+            "containers": generate_container_metrics(),
+            "vms": generate_vm_metrics(),
+            "apps": generate_app_metrics(),
+            "orchestrator": generate_orchestrator_metrics(),
+            "network": generate_network_metrics()
+        }
 
-    while True:
-        container_metrics = generate_container_metrics()
-        vm_metrics = generate_vm_metrics()
-        app_metrics = generate_app_metrics()
-        orchestrator_metrics = generate_orchestrator_metrics()
-        network_metrics = generate_network_metrics()
+    # Top CSS to give an "agent panel" look
+    st.markdown(
+        """
+    <style>
+    .agent-card {background: linear-gradient(90deg, #0f172a 0%, #071034 100%); padding: 14px; border-radius: 10px; color: #E6F0FF;}
+    .agent-metric {background: rgba(255,255,255,0.03); padding:8px; border-radius:8px; margin-bottom:6px}
+    .agent-small {color:#AFC6FF; font-size:12px}
+    .status-pill {display:inline-block; padding:6px 10px; border-radius:999px; font-weight:700;}
+    .status-online {background: #10b981; color: white}
+    .status-offline {background: #ef4444; color: white}
+    .muted {color:#9aa7c7}
+    pre {
+        background-color: #021026 !important;
+        color: #dbeafe !important;
+        padding: 8px !important;
+        border-radius: 6px !important;
+    }
+    </style>
+    """,
+        unsafe_allow_html=True,
+    )
 
-        container_placeholder.markdown(f"### Containers Metrics\n"
-                                       f"**Timestamp:** {container_metrics['timestamp']}  \n"
-                                       f"**Host ID:** {container_metrics['host_id']}  \n"
-                                       f"**Container ID:** {container_metrics['container_id']}  \n"
-                                       f"**Container Image:** {container_metrics['container_image']}  \n"
-                                       f"**CPU Utilization (%):** {container_metrics['cpu_util_pct']}  \n"
-                                       f"**CPU Seconds:** {container_metrics['cpu_seconds']}  \n"
-                                       f"**Memory RSS (bytes):** {container_metrics['memory_rss_bytes']}  \n"
-                                       f"**Memory Limit (bytes):** {container_metrics['memory_limit_bytes']}  \n"
-                                       f"**Disk Read (bytes):** {container_metrics['disk_read_bytes']}  \n"
-                                       f"**Disk Write (bytes):** {container_metrics['disk_write_bytes']}  \n"
-                                       f"**I/O Operations:** {container_metrics['io_ops']}  \n"
-                                       f"**Network RX (bytes):** {container_metrics['network_rx_bytes']}  \n"
-                                       f"**Network TX (bytes):** {container_metrics['network_tx_bytes']}  \n"
-                                       f"**Process Count:** {container_metrics['process_count']}  \n"
-                                       f"**Restart Count:** {container_metrics['restart_count']}  \n"
-                                       f"**Uptime (seconds):** {container_metrics['uptime_seconds']}  \n"
-                                       f"**Sensor Temperature (°C):** {container_metrics['sensor_temp_c']}  \n"
-                                       f"**Sensor Humidity (%):** {container_metrics['sensor_humidity_pct']}  \n")
+    # Header
+    col_logo, col_text = st.columns([0.10, 0.90])
 
-        vm_placeholder.markdown(f"### Virtual Machines Metrics\n"
-                                f"**Timestamp:** {vm_metrics['timestamp']}  \n"
-                                f"**Host ID:** {vm_metrics['host_id']}  \n"
-                                f"**VM CPU Utilization (%):** {vm_metrics['vm_cpu_pct']}  \n"
-                                f"**CPU Seconds:** {vm_metrics['cpu_seconds']}  \n"
-                                f"**VM CPU Steal (%):** {vm_metrics['vm_cpu_steal_pct']}  \n"
-                                f"**Memory RSS (bytes):** {vm_metrics['memory_rss_bytes']}  \n"
-                                f"**Memory Limit (bytes):** {vm_metrics['memory_limit_bytes']}  \n"
-                                f"**Disk IOPS:** {vm_metrics['disk_iops']}  \n"
-                                f"**Disk Read (bytes):** {vm_metrics['disk_read_bytes']}  \n"
-                                f"**Disk Write (bytes):** {vm_metrics['disk_write_bytes']}  \n"
-                                f"**Network RX (bytes):** {vm_metrics['network_rx_bytes']}  \n"
-                                f"**Network TX (bytes):** {vm_metrics['network_tx_bytes']}  \n"
-                                f"**Host Power Estimate (W):** {vm_metrics['host_power_estimate_w']}  \n"
-                                f"**Hypervisor Overhead (%):** {vm_metrics['hypervisor_overhead_pct']}  \n"
-                                f"**Uptime (seconds):** {vm_metrics['uptime_seconds']}  \n")
+    with col_logo:
+        st.image("Assets/Argus Logo.png", width=60)
 
-        app_placeholder.markdown(f"### Applications Metrics\n"
-                                 f"**Timestamp:** {app_metrics['timestamp']}  \n"
-                                 f"**Host ID:** {app_metrics['host_id']}  \n"
-                                 f"**Container ID:** {app_metrics['container_id']}  \n"
-                                 f"**Request Rate (RPS):** {app_metrics['request_rate_rps']}  \n"
-                                 f"**Latency P95 (ms):** {app_metrics['latency_p95_ms']}  \n"
-                                 f"**Latency P50 (ms):** {app_metrics['latency_p50_ms']}  \n"
-                                 f"**Latency P99 (ms):** {app_metrics['latency_p99_ms']}  \n"
-                                 f"**Error Rate (%):** {app_metrics['error_rate_pct']}  \n"
-                                 f"**DB Connection Count:** {app_metrics['db_connection_count']}  \n"
-                                 f"**Cache Hit Ratio (%):** {app_metrics['cache_hit_ratio']}  \n"
-                                 f"**Queue Length:** {app_metrics['queue_length']}  \n"
-                                 f"**CPU Utilization (%):** {app_metrics['cpu_util_pct']}  \n"
-                                 f"**CPU Seconds:** {app_metrics['cpu_seconds']}  \n"
-                                 f"**Memory RSS (bytes):** {app_metrics['memory_rss_bytes']}  \n"
-                                 f"**Disk Read (bytes):** {app_metrics['disk_read_bytes']}  \n"
-                                 f"**Disk Write (bytes):** {app_metrics['disk_write_bytes']}  \n"
-                                 f"**Network RX (bytes):** {app_metrics['network_rx_bytes']}  \n"
-                                 f"**Network TX (bytes):** {app_metrics['network_tx_bytes']}  \n"
-                                 f"**Process Count:** {app_metrics['process_count']}  \n"
-                                 f"**Restart Count:** {app_metrics['restart_count']}  \n"
-                                 f"**Sensor Temperature (°C):** {app_metrics['sensor_temp_c']}  \n"
-                                 f"**Sensor Humidity (%):** {app_metrics['sensor_humidity_pct']}  \n")
+    with col_text:
+        st.markdown(
+            """
+            <div>
+            <div style='font-size:20px;font-weight:700'>Argus Agent</div>
+            <div class='agent-small'>Telemetry ingestion preview</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        orchestrator_placeholder.markdown(f"### Orchestrator Metrics\n"
-                                           f"**Timestamp:** {orchestrator_metrics['timestamp']}  \n"
-                                           f"**Node Count:** {orchestrator_metrics['node_count']}  \n"
-                                           f"**Pod Count:** {orchestrator_metrics['pod_count']}  \n"
-                                           f"**Pod Status Pending:** {orchestrator_metrics['pod_status_pending']}  \n"
-                                           f"**Pod Status Running:** {orchestrator_metrics['pod_status_running']}  \n"
-                                           f"**Pod Status Failed:** {orchestrator_metrics['pod_status_failed']}  \n"
-                                           f"**Scheduler Evictions:** {orchestrator_metrics['scheduler_evictions']}  \n"
-                                           f"**Cluster API Latency (ms):** {orchestrator_metrics['cluster_api_latency_ms']}  \n"
-                                           f"**Cluster Autoscaler Actions:** {orchestrator_metrics['cluster_autoscaler_actions']}  \n"
-                                           f"**Aggregated CPU Utilization (%):** {orchestrator_metrics['aggregated_cpu_util_pct']}  \n"
-                                           f"**Aggregated Memory RSS (bytes):** {orchestrator_metrics['aggregated_memory_rss_bytes']}  \n"
-                                           f"**Aggregated Network Bytes:** {orchestrator_metrics['aggregated_network_bytes']}  \n"
-                                           f"**Restart Count:** {orchestrator_metrics['restart_count']}  \n"
-                                           f"**Uptime (seconds):** {orchestrator_metrics['uptime_seconds']}  \n")
 
-        network_placeholder.markdown(f"### Network Metrics\n"
-                                      f"**Timestamp:** {network_metrics['timestamp']}  \n"
-                                      f"**Host ID:** {network_metrics['host_id']}  \n"
-                                      f"**Interface Throughput (bps):** {network_metrics['interface_throughput_bps']}  \n"
-                                      f"**Network RX (bytes):** {network_metrics['network_rx_bytes']}  \n"
-                                      f"**Network TX (bytes):** {network_metrics['network_tx_bytes']}  \n"
-                                      f"**Packet Loss (%):** {network_metrics['packet_loss_pct']}  \n"
-                                      f"**RTT (ms):** {network_metrics['rtt_ms']}  \n"
-                                      f"**Jitter (ms):** {network_metrics['jitter_ms']}  \n"
-                                      f"**Active Flows:** {network_metrics['active_flows']}  \n"
-                                      f"**BGP Changes:** {network_metrics['bgp_changes']}  \n"
-                                      f"**PSU Efficiency (%):** {network_metrics['psu_efficiency_pct']}  \n"
-                                      f"**Sensor Temperature (°C):** {network_metrics['sensor_temp_c']}  \n"
-                                      f"**Sensor Humidity (%):** {network_metrics['sensor_humidity_pct']}  \n")
+    # Sidebar: quick settings and agent identity (presentation only)
+    with st.sidebar:
+        st.markdown("# Argus Agent")
+        st.markdown(f"**Instance ID:** `{st.session_state.instance_id}`")
+        st.markdown("**Location:** edge-site-01")
+        st.markdown("---")
+        st.markdown("Agent fetches new telemetry data every **15 seconds**")
+        show_raw = st.checkbox("Show global raw JSON", value=False)
+        st.markdown("---")
+        st.caption("Argus Agent by PiUEneer")
 
-        time.sleep(15) 
+    # placeholders (create empty placeholders that we will update in-place)
+    main_area = st.container()
+    sidebar_right = st.empty()
+
+    with main_area:
+        panels = st.container()
+        left, right = panels.columns([2, 1])
+
+        # left: permanent placeholders (use empty() so content gets replaced, not appended)
+        cont_placeholder = left.empty()
+        vm_placeholder = left.empty()
+        app_placeholder = left.empty()
+        orch_placeholder = left.empty()
+        net_placeholder = left.empty()
+
+        # right: agent feed / metadata
+        with right:
+            st.markdown("### Agent Feed")
+            feed_box = st.empty()
+            st.markdown("### Controls")
+            st.markdown("(Presentation only)")
+
+    # countdown placeholder (sidebar)
+    countdown_placeholder = sidebar_right.empty()
+
+    try:
+        # main loop - updates same placeholders in-place
+        while True:
+            now_mon = time.monotonic()
+            elapsed = now_mon - st.session_state.last_emit
+            remaining = max(0.0, INTERVAL - elapsed)
+            remaining_ceil = math.ceil(remaining)
+
+            # when interval passes, produce new telemetry and update single source of truth
+            if elapsed >= INTERVAL:
+                st.session_state.last_metrics = {
+                    "containers": generate_container_metrics(),
+                    "vms": generate_vm_metrics(),
+                    "apps": generate_app_metrics(),
+                    "orchestrator": generate_orchestrator_metrics(),
+                    "network": generate_network_metrics()
+                }
+                st.session_state.emit_seq += 1
+                st.session_state.last_emit = now_mon
+
+                # append a human-friendly feed entry and keep only MAX_FEED entries
+                entry = (
+                    f"{datetime.now().strftime('%H:%M:%S')} - Update #{st.session_state.emit_seq} - "
+                    f"Snapshot captured and ready for storage (instance: {st.session_state.instance_id})  | "
+                    f"container: {st.session_state.last_metrics['containers']['container_id']}  | "
+                    f"vm: {st.session_state.last_metrics['vms']['host_id']}  | "
+                    f"app: {st.session_state.last_metrics['apps']['container_id']}"
+                )
+                st.session_state.agent_log.insert(0, entry)
+                st.session_state.agent_log = st.session_state.agent_log[:MAX_FEED]
+
+            # always render the current metrics from st.session_state.last_metrics
+            m = st.session_state.last_metrics
+
+            # update the countdown in the sidebar
+            countdown_placeholder.markdown(f"**Next update in:** {remaining_ceil} s")
+
+            # --- Update each panel in-place (these overwrite previous content) ---
+
+            # Containers panel
+            cm = m["containers"]
+            with cont_placeholder.container():
+                st.markdown("<div class='agent-card'>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div style='display:flex; justify-content:space-between; align-items:center'>"
+                    f"<div><strong>Containers</strong> <span class='agent-small'>| {cm['container_image']} - {cm['container_id']}</span></div>"
+                    f"<div class='agent-small muted'>Host: {cm['host_id']}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+                k1, k2, k3, k4 = st.columns([1, 1, 1, 1])
+                k1.metric("CPU %", f"{cm['cpu_util_pct']}%")
+                k2.metric("Memory", f"{human_bytes(cm['memory_rss_bytes'])}")
+                k3.metric("Net RX", f"{human_bytes(cm['network_rx_bytes'])}")
+                k4.metric("Uptime", f"{human_seconds(cm['uptime_seconds'])}")
+                st.progress(min(max(cm['cpu_util_pct'] / 100.0, 0.0), 1.0))
+                st.markdown(f"<div class='agent-small muted'>Next update in: {remaining_ceil} s</div>", unsafe_allow_html=True)
+                with st.expander("All telemetry - container", expanded=False):
+                    st.json(cm)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            # VM panel
+            vm = m["vms"]
+            with vm_placeholder.container():
+                st.markdown("<div class='agent-card' style='margin-top:10px'>", unsafe_allow_html=True)
+                st.markdown(f"<strong>Virtual Machine</strong> <span class='agent-small muted'>| {vm['host_id']}</span>", unsafe_allow_html=True)
+                v1, v2, v3, v4 = st.columns([1, 1, 1, 1])
+                v1.metric("CPU %", f"{vm['vm_cpu_pct']}%")
+                v2.metric("Memory", f"{human_bytes(vm['memory_rss_bytes'])}")
+                v3.metric("Disk IOPS", f"{vm['disk_iops']}")
+                v4.metric("Power Est.", f"{vm['host_power_estimate_w']} W")
+                st.progress(min(max(vm['vm_cpu_pct'] / 100.0, 0.0), 1.0))
+                st.markdown(f"<div class='agent-small muted'>Next update in: {remaining_ceil} s</div>", unsafe_allow_html=True)
+                with st.expander("All telemetry - vm", expanded=False):
+                    st.json(vm)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            # Application panel
+            ap = m["apps"]
+            with app_placeholder.container():
+                st.markdown("<div class='agent-card' style='margin-top:10px'>", unsafe_allow_html=True)
+                st.markdown(f"<strong>Application</strong> <span class='agent-small muted'>| {ap['container_id']} on {ap['host_id']}</span>", unsafe_allow_html=True)
+                a1, a2, a3 = st.columns([1, 1, 1])
+                a1.metric("Req/s", f"{ap['request_rate_rps']}")
+                a2.metric("P95 (ms)", f"{ap['latency_p95_ms']}")
+                a3.metric("Errors %", f"{ap['error_rate_pct']}%")
+                st.progress(min(max(ap['cpu_util_pct'] / 100.0, 0.0), 1.0))
+                st.markdown(f"<div class='agent-small muted'>Next update in: {remaining_ceil} s</div>", unsafe_allow_html=True)
+                with st.expander("All telemetry - app", expanded=False):
+                    st.json(ap)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            # Orchestrator panel
+            orc = m["orchestrator"]
+            with orch_placeholder.container():
+                st.markdown("<div class='agent-card' style='margin-top:10px'>", unsafe_allow_html=True)
+                st.markdown(f"<strong>Orchestrator</strong> <span class='agent-small muted'>| nodes: {orc['node_count']}</span>", unsafe_allow_html=True)
+                o1, o2 = st.columns([1, 1])
+                o1.metric("Pods", f"{orc['pod_count']}")
+                o2.metric("API Latency ms", f"{orc['cluster_api_latency_ms']}")
+                st.markdown(f"<div class='agent-small muted'>Next update in: {remaining_ceil} s</div>", unsafe_allow_html=True)
+                with st.expander("All telemetry - orchestrator", expanded=False):
+                    st.json(orc)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            # Network panel
+            net = m["network"]
+            with net_placeholder.container():
+                st.markdown("<div class='agent-card' style='margin-top:10px'>", unsafe_allow_html=True)
+                st.markdown(f"<strong>Network</strong> <span class='agent-small muted'>| {net['host_id']}</span>", unsafe_allow_html=True)
+                n1, n2, n3 = st.columns([1, 1, 1])
+                n1.metric("Throughput bps", f"{net['interface_throughput_bps']}")
+                n2.metric("RTT ms", f"{net['rtt_ms']}")
+                n3.metric("Packet Loss %", f"{net['packet_loss_pct']}%")
+                st.markdown(f"<div class='agent-small muted'>Next update in: {remaining_ceil} s</div>", unsafe_allow_html=True)
+                with st.expander("All telemetry - network", expanded=False):
+                    st.json(net)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            # Update feed box (right column) - show only the MAX_FEED most recent entries
+            feed_box.markdown("""
+            <div style='background:#021026;padding:8px;border-radius:8px;min-height:220px;'>
+            <pre style='white-space:pre-wrap'>
+            """ + "\n".join(st.session_state.agent_log) + """
+            </pre>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Optional global raw JSON (sidebar toggle)
+            if show_raw:
+                st.sidebar.markdown("### Latest raw telemetry")
+                st.sidebar.json(st.session_state.last_metrics)
+
+            # wait a step to update countdown smoothly (metrics only change when elapsed >= INTERVAL)
+            time.sleep(SLEEP_STEP)
+
+    except Exception as e:
+        # preserve state and show error in feed
+        err_entry = f"[{datetime.now().isoformat()}] instance={st.session_state.instance_id} encountered error: {e}"
+        st.session_state.agent_log.insert(0, err_entry)
+        st.session_state.agent_log = st.session_state.agent_log[:MAX_FEED]
+        feed_box.markdown(
+            "<div style='background:#021026;padding:8px;border-radius:8px;min-height:220px;'><pre style='white-space:pre-wrap'>"
+            + "\n".join(st.session_state.agent_log)
+            + "</pre></div>",
+            unsafe_allow_html=True,
+        )
+
 
 if __name__ == "__main__":
     main()
