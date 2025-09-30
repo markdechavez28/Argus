@@ -5,12 +5,7 @@ import uuid
 import math
 from datetime import datetime
 
-# -------------------
-# Presentation helpers (UI only)
-# -------------------
-
 def human_bytes(n: int) -> str:
-    """Convert bytes to human readable string."""
     step_unit = 1024.0
     if n < step_unit:
         return f"{n} B"
@@ -20,9 +15,7 @@ def human_bytes(n: int) -> str:
             return f"{n:,.2f} {unit}"
     return f"{n:,.2f} PB"
 
-
 def human_seconds(s: int) -> str:
-    """Convert seconds to human readable duration."""
     if s < 60:
         return f"{s} s"
     m, s = divmod(s, 60)
@@ -30,11 +23,6 @@ def human_seconds(s: int) -> str:
         return f"{m}m {s}s"
     h, m = divmod(m, 60)
     return f"{h}h {m}m"
-
-
-# -------------------
-# Metric generators (unchanged)
-# -------------------
 
 def generate_container_metrics():
     return {
@@ -58,7 +46,6 @@ def generate_container_metrics():
         "sensor_humidity_pct": round(random.uniform(0.0, 100.0), 2)
     }
 
-
 def generate_vm_metrics():
     return {
         "timestamp": datetime.now().isoformat(),
@@ -77,7 +64,6 @@ def generate_vm_metrics():
         "hypervisor_overhead_pct": round(random.uniform(0.0, 100.0), 2),
         "uptime_seconds": random.randint(0, 86400)
     }
-
 
 def generate_app_metrics():
     return {
@@ -105,7 +91,6 @@ def generate_app_metrics():
         "sensor_humidity_pct": round(random.uniform(0.0, 100.0), 2)
     }
 
-
 def generate_orchestrator_metrics():
     return {
         "timestamp": datetime.now().isoformat(),
@@ -124,7 +109,6 @@ def generate_orchestrator_metrics():
         "uptime_seconds": random.randint(0, 86400)
     }
 
-
 def generate_network_metrics():
     return {
         "timestamp": datetime.now().isoformat(),
@@ -142,20 +126,13 @@ def generate_network_metrics():
         "sensor_humidity_pct": round(random.uniform(0.0, 100.0), 2)
     }
 
-
-# -------------------
-# Argus Agent UI (in-place updates)
-# -------------------
-
-INTERVAL = 15  # seconds
-SLEEP_STEP = 1  # update countdown once per second
-MAX_FEED = 10   # keep only 10 recent feed entries
-
+INTERVAL = 15  
+SLEEP_STEP = 1  
+MAX_FEED = 10   
 
 def main():
     st.set_page_config(page_title="Argus Agent", layout="wide", initial_sidebar_state="expanded")
 
-    # initialize persistent session state
     if "agent_log" not in st.session_state:
         st.session_state.agent_log = []
     if "instance_id" not in st.session_state:
@@ -163,9 +140,8 @@ def main():
     if "emit_seq" not in st.session_state:
         st.session_state.emit_seq = 0
     if "last_emit" not in st.session_state:
-        st.session_state.last_emit = time.monotonic() - INTERVAL  # force immediate first emit
+        st.session_state.last_emit = time.monotonic() - INTERVAL  
     if "last_metrics" not in st.session_state:
-        # start with a seeded batch so UI isn't empty
         st.session_state.last_metrics = {
             "containers": generate_container_metrics(),
             "vms": generate_vm_metrics(),
@@ -174,7 +150,7 @@ def main():
             "network": generate_network_metrics()
         }
 
-    # Top CSS to give an "agent panel" look
+# Need help in designing the agent's UI
     st.markdown(
         """
     <style>
@@ -196,7 +172,6 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # Header
     col_logo, col_text = st.columns([0.10, 0.90])
 
     with col_logo:
@@ -213,8 +188,6 @@ def main():
             unsafe_allow_html=True,
         )
 
-
-    # Sidebar: quick settings and agent identity (presentation only)
     with st.sidebar:
         st.markdown("# Argus Agent")
         st.markdown(f"**Instance ID:** `{st.session_state.instance_id}`")
@@ -225,7 +198,6 @@ def main():
         st.markdown("---")
         st.caption("Argus Agent by PiUEneer")
 
-    # placeholders (create empty placeholders that we will update in-place)
     main_area = st.container()
     sidebar_right = st.empty()
 
@@ -233,32 +205,27 @@ def main():
         panels = st.container()
         left, right = panels.columns([2, 1])
 
-        # left: permanent placeholders (use empty() so content gets replaced, not appended)
         cont_placeholder = left.empty()
         vm_placeholder = left.empty()
         app_placeholder = left.empty()
         orch_placeholder = left.empty()
         net_placeholder = left.empty()
 
-        # right: agent feed / metadata
         with right:
             st.markdown("### Agent Feed")
             feed_box = st.empty()
             st.markdown("### Controls")
             st.markdown("(Presentation only)")
 
-    # countdown placeholder (sidebar)
     countdown_placeholder = sidebar_right.empty()
 
     try:
-        # main loop - updates same placeholders in-place
         while True:
             now_mon = time.monotonic()
             elapsed = now_mon - st.session_state.last_emit
             remaining = max(0.0, INTERVAL - elapsed)
             remaining_ceil = math.ceil(remaining)
 
-            # when interval passes, produce new telemetry and update single source of truth
             if elapsed >= INTERVAL:
                 st.session_state.last_metrics = {
                     "containers": generate_container_metrics(),
@@ -270,7 +237,6 @@ def main():
                 st.session_state.emit_seq += 1
                 st.session_state.last_emit = now_mon
 
-                # append a human-friendly feed entry and keep only MAX_FEED entries
                 entry = (
                     f"{datetime.now().strftime('%H:%M:%S')} - Update #{st.session_state.emit_seq} - "
                     f"Snapshot captured and ready for storage (instance: {st.session_state.instance_id})  | "
@@ -281,15 +247,10 @@ def main():
                 st.session_state.agent_log.insert(0, entry)
                 st.session_state.agent_log = st.session_state.agent_log[:MAX_FEED]
 
-            # always render the current metrics from st.session_state.last_metrics
             m = st.session_state.last_metrics
 
-            # update the countdown in the sidebar
             countdown_placeholder.markdown(f"**Next update in:** {remaining_ceil} s")
 
-            # --- Update each panel in-place (these overwrite previous content) ---
-
-            # Containers panel
             cm = m["containers"]
             with cont_placeholder.container():
                 st.markdown("<div class='agent-card'>", unsafe_allow_html=True)
@@ -311,7 +272,6 @@ def main():
                     st.json(cm)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # VM panel
             vm = m["vms"]
             with vm_placeholder.container():
                 st.markdown("<div class='agent-card' style='margin-top:10px'>", unsafe_allow_html=True)
@@ -327,7 +287,6 @@ def main():
                     st.json(vm)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # Application panel
             ap = m["apps"]
             with app_placeholder.container():
                 st.markdown("<div class='agent-card' style='margin-top:10px'>", unsafe_allow_html=True)
@@ -342,7 +301,6 @@ def main():
                     st.json(ap)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # Orchestrator panel
             orc = m["orchestrator"]
             with orch_placeholder.container():
                 st.markdown("<div class='agent-card' style='margin-top:10px'>", unsafe_allow_html=True)
@@ -355,7 +313,6 @@ def main():
                     st.json(orc)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # Network panel
             net = m["network"]
             with net_placeholder.container():
                 st.markdown("<div class='agent-card' style='margin-top:10px'>", unsafe_allow_html=True)
@@ -369,7 +326,6 @@ def main():
                     st.json(net)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # Update feed box (right column) - show only the MAX_FEED most recent entries
             feed_box.markdown("""
             <div style='background:#021026;padding:8px;border-radius:8px;min-height:220px;'>
             <pre style='white-space:pre-wrap'>
@@ -378,16 +334,13 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-            # Optional global raw JSON (sidebar toggle)
             if show_raw:
                 st.sidebar.markdown("### Latest raw telemetry")
                 st.sidebar.json(st.session_state.last_metrics)
 
-            # wait a step to update countdown smoothly (metrics only change when elapsed >= INTERVAL)
             time.sleep(SLEEP_STEP)
 
     except Exception as e:
-        # preserve state and show error in feed
         err_entry = f"[{datetime.now().isoformat()}] instance={st.session_state.instance_id} encountered error: {e}"
         st.session_state.agent_log.insert(0, err_entry)
         st.session_state.agent_log = st.session_state.agent_log[:MAX_FEED]
@@ -397,7 +350,6 @@ def main():
             + "</pre></div>",
             unsafe_allow_html=True,
         )
-
 
 if __name__ == "__main__":
     main()
