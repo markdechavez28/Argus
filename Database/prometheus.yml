@@ -12,4 +12,4 @@ scrape_configs:
   - job_name: "argus_agent"
     metrics_path: /metrics
     static_configs:
-      - targets: ["localhost:8000"] # if Prometheus runs on same machine as the agent
+      - targets: ["host.docker.internal:8000"] # Use host.docker.internal instead of localhost
